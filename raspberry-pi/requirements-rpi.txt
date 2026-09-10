@@ -1,0 +1,21 @@
+# EcoSort AI - Dipendenze Raspberry Pi (pip)
+# ============================================
+# Installare con: pip install -r requirements-rpi.txt
+#
+# NOTA: picamera2, gpiozero, numpy e PIL sono installati
+# tramite apt (pacchetti di sistema) e non servono qui.
+#
+# ⚠️ NON usare python3-opencv via apt su Bookworm/Trixie:
+#    porta 500+ MB di dipendenze inutili (VTK, GDAL, OpenMPI...).
+#    Usare opencv-python-headless via pip (~15MB).
+
+# Computer Vision (headless = senza Qt/VTK/X11, ideale per Rasp)
+opencv-python-headless
+
+# Inferenza TFLite (ai-edge-litert = successore ufficiale di tflite-runtime)
+# Compatibile con Python 3.10+ e ARM64 (Bookworm)
+ai-edge-litert
+
+# Manipolazione immagini (Pillow di solito già installato via apt,
+# ma lo includiamo per sicurezza)
+Pillow>=10.0

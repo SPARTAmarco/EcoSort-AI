@@ -1,0 +1,19 @@
+# Normalizza i fine riga: LF nel repository, nativi in locale
+* text=auto eol=lf
+
+# Script Windows: sempre CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binari
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.keras binary
+*.tflite binary
+*.onnx binary
+*.mp4 binary
+
+# Statistiche linguaggi su GitHub
+docs/** linguist-documentation
+*.ipynb linguist-documentation

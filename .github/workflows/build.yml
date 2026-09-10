@@ -1,0 +1,33 @@
+name: Build app desktop
+
+on:
+  push:
+    branches: [main]
+    paths: ['desktop-app/**', '.github/workflows/build.yml']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build con Maven
+        working-directory: desktop-app
+        run: mvn -B clean package
+
+      - name: Carica il jar come artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecosort-ai-jar
+          path: desktop-app/target/*.jar
+          if-no-files-found: error

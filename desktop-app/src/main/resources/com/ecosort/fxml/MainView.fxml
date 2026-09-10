@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.image.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.shape.*?>
+<?import javafx.geometry.Insets?>
+
+<StackPane xmlns="http://javafx.com/javafx/21"
+           xmlns:fx="http://javafx.com/fxml/1"
+           fx:controller="com.ecosort.controller.MainController"
+           styleClass="root-pane">
+
+    <BorderPane>
+
+        <!-- ══════════════ TOP BAR ══════════════ -->
+        <top>
+            <VBox styleClass="top-bar">
+
+                <!-- Riga principale -->
+                <HBox alignment="CENTER_LEFT" spacing="0">
+                    <padding><Insets top="16" right="28" bottom="16" left="28"/></padding>
+
+                    <!-- Logo + Titolo -->
+                    <HBox alignment="CENTER_LEFT" spacing="10">
+                        <VBox spacing="1">
+                            <HBox spacing="0" alignment="CENTER_LEFT">
+                                <Label text="Eco" styleClass="logo-part-eco"/>
+                                <Label text="Sort" styleClass="logo-part-sort"/>
+                                <Label text="AI" styleClass="logo-part-ai"/>
+                            </HBox>
+                            <Label text="rileva · riconosce · ricicla" styleClass="logo-subtitle"/>
+                        </VBox>
+                    </HBox>
+
+                    <Region HBox.hgrow="ALWAYS"/>
+
+                    <!-- ══ MODO SWITCHER ══ -->
+                    <VBox alignment="CENTER" spacing="6">
+                        <HBox styleClass="modo-switcher" alignment="CENTER" spacing="0">
+                            <!-- OFFLINE -->
+                            <Button fx:id="btnOffline"
+                                    text="🖥  OFFLINE"
+                                    styleClass="modo-btn-active"
+                                    onAction="#onModoOffline"
+                                    minWidth="150" prefHeight="44"/>
+                            <!-- ONLINE -->
+                            <Button fx:id="btnOnline"
+                                    text="🌐  ONLINE"
+                                    styleClass="modo-btn-inactive"
+                                    onAction="#onModoOnline"
+                                    minWidth="150" prefHeight="44"/>
+                        </HBox>
+                        <!-- Stato API key (visibile solo in online) -->
+                        <Label fx:id="labelKeyStatus" text=""
+                               styleClass="key-missing"
+                               alignment="CENTER"
+                               visible="false" managed="false"/>
+                    </VBox>
+                </HBox>
+
+                <!-- Divider -->
+                <Region prefHeight="1" style="-fx-background-color: #1E2B1E;"/>
+            </VBox>
+        </top>
+
+        <!-- ══════════════ CENTER ══════════════ -->
+        <center>
+            <HBox spacing="24" styleClass="center-area">
+                <padding><Insets top="24" right="28" bottom="24" left="28"/></padding>
+
+                <!-- ─── LEFT: Drop zone ─── -->
+                <VBox spacing="14" HBox.hgrow="ALWAYS" minWidth="380">
+
+                    <StackPane fx:id="dropZone" styleClass="drop-zone"
+                               onMouseClicked="#onDropZoneClick"
+                               onDragOver="#onDragOver"
+                               onDragExited="#onDragExited"
+                               onDragDropped="#onDragDropped"
+                               VBox.vgrow="ALWAYS" minHeight="300">
+
+                        <VBox fx:id="dropPlaceholder" alignment="CENTER" spacing="14"
+                              styleClass="drop-placeholder">
+                            <Label text="📂" styleClass="drop-icon"/>
+                            <VBox alignment="CENTER" spacing="4">
+                                <Label text="Trascina un'immagine qui" styleClass="drop-hint-primary"/>
+                                <Label text="oppure clicca per sfogliare" styleClass="drop-hint-secondary"/>
+                            </VBox>
+                            <Label text="JPG  ·  PNG  ·  WEBP  ·  BMP" styleClass="drop-hint-formats"/>
+                        </VBox>
+
+                        <ImageView fx:id="previewImage"
+                                   fitWidth="480" fitHeight="360"
+                                   preserveRatio="true" smooth="true"
+                                   visible="false"/>
+
+                        <!-- Camera UI Container -->
+                        <VBox fx:id="cameraContainer" alignment="CENTER" spacing="12"
+                              visible="false" managed="false" styleClass="camera-container">
+                            <ImageView fx:id="cameraFeed"
+                                       fitWidth="440" fitHeight="280"
+                                       preserveRatio="true" smooth="true"/>
+                            <HBox alignment="CENTER" spacing="16">
+                                <Button fx:id="btnScatta" text="📸  Cattura"
+                                        styleClass="btn-scatta"
+                                        onAction="#onScattaFoto"
+                                        prefHeight="36" prefWidth="120"/>
+                                <Button fx:id="btnAnnullaCamera" text="Annulla"
+                                        styleClass="btn-annulla"
+                                        onAction="#onAnnullaCamera"
+                                        prefHeight="36" prefWidth="120"/>
+                            </HBox>
+                        </VBox>
+                    </StackPane>
+
+                    <!-- Nome file + bottoni -->
+                    <Label fx:id="labelNomeFile" text="" styleClass="nome-file"
+                           maxWidth="1.7976931348623157E308"/>
+
+                    <HBox spacing="12">
+                        <Button fx:id="btnAnalizza" text="⚡  Analizza"
+                                styleClass="btn-analizza"
+                                onAction="#onAnalizza"
+                                disable="true"
+                                maxWidth="1.7976931348623157E308"
+                                prefHeight="48"
+                                HBox.hgrow="ALWAYS"/>
+                        <Button fx:id="btnCamera" text="📸  Camera"
+                                styleClass="btn-camera"
+                                onAction="#onCameraClick"
+                                prefHeight="48"
+                                HBox.hgrow="ALWAYS"/>
+                        <Button fx:id="btnPulisci" text="✕"
+                                styleClass="btn-pulisci"
+                                onAction="#onPulisci"
+                                prefWidth="48" prefHeight="48"/>
+                    </HBox>
+                </VBox>
+
+                <!-- ─── RIGHT: Risultato ─── -->
+                <VBox fx:id="panelRisultato" styleClass="result-panel"
+                      minWidth="320" maxWidth="420" HBox.hgrow="ALWAYS"
+                      visible="false" managed="false">
+
+                    <!-- Barra colore top -->
+                    <Rectangle fx:id="colorBar" height="5"
+                               width="320"
+                               fill="#1E2B1E"/>
+
+                    <VBox spacing="0" VBox.vgrow="ALWAYS" styleClass="result-inner">
+
+                        <!-- Header risultato -->
+                        <Label text="RISULTATO ANALISI" styleClass="result-header-label"/>
+
+                        <!-- Emoji + categoria -->
+                        <VBox alignment="CENTER" spacing="6" style="-fx-padding: 20 0 20 0;">
+                            <Label fx:id="labelEmojiCategoria" text="" styleClass="result-emoji"/>
+                            <Label fx:id="labelCategoria" text="—" styleClass="result-categoria"/>
+                        </VBox>
+
+                        <Separator styleClass="result-sep"/>
+
+                        <!-- Confidenza -->
+                        <VBox spacing="8" style="-fx-padding: 16 0 0 0;">
+                            <HBox alignment="CENTER_LEFT">
+                                <Label text="CONFIDENZA" styleClass="result-field-label"/>
+                                <Region HBox.hgrow="ALWAYS"/>
+                                <Label fx:id="labelConfidenzaPct" text="—" styleClass="result-pct"/>
+                            </HBox>
+                            <ProgressBar fx:id="barraConfidenza" progress="0"
+                                         maxWidth="1.7976931348623157E308"
+                                         styleClass="conf-bar" prefHeight="10"/>
+                        </VBox>
+
+                        <!-- Stats griglia -->
+                        <HBox spacing="0" style="-fx-padding: 16 0 0 0;">
+                            <!-- Tempo -->
+                            <VBox styleClass="stat-box" HBox.hgrow="ALWAYS" alignment="CENTER">
+                                <Label text="TEMPO" styleClass="stat-label"/>
+                                <Label fx:id="labelTempo" text="—" styleClass="stat-value"/>
+                            </VBox>
+                            <!-- Separatore verticale -->
+                            <Rectangle width="1" fill="#1E2B1E" height="50"/>
+                            <!-- Modalità -->
+                            <VBox styleClass="stat-box" HBox.hgrow="ALWAYS" alignment="CENTER">
+                                <Label text="MOTORE" styleClass="stat-label"/>
+                                <Label fx:id="labelModalitaUsata" text="—" styleClass="stat-value"/>
+                            </VBox>
+                        </HBox>
+
+                        <Separator styleClass="result-sep" style="-fx-padding: 16 0 0 0;"/>
+
+                        <!-- Motivazione (solo Gemini) -->
+                        <VBox fx:id="rowMotivo" spacing="6" visible="false" managed="false"
+                              style="-fx-padding: 14 0 0 0;">
+                            <Label text="ANALISI AI" styleClass="result-field-label"/>
+                            <Label fx:id="labelMotivo" text="" styleClass="result-motivo"
+                                   wrapText="true"/>
+                        </VBox>
+
+                        <Region VBox.vgrow="ALWAYS"/>
+                    </VBox>
+                </VBox>
+
+                <!-- ─── Placeholder destra quando nessun risultato ─── -->
+                <!-- (niente, lo spazio è gestito dal HBox.hgrow) -->
+
+            </HBox>
+        </center>
+
+        <!-- ══════════════ STATUS BAR ══════════════ -->
+        <bottom>
+            <HBox styleClass="status-bar" alignment="CENTER_LEFT" spacing="8">
+                <padding><Insets top="8" right="20" bottom="8" left="20"/></padding>
+                <Label text="●" styleClass="status-dot"/>
+                <Label fx:id="statusBar" text="Inizializzazione..." styleClass="status-text"/>
+            </HBox>
+        </bottom>
+
+    </BorderPane>
+
+    <!-- ══════════════ LOADING OVERLAY ══════════════ -->
+    <StackPane fx:id="loadingOverlay" styleClass="loading-overlay"
+               visible="false" managed="false">
+        <VBox alignment="CENTER" spacing="20">
+            <Circle fx:id="loadingSpinner" radius="26" fill="TRANSPARENT" styleClass="loading-spinner"/>
+            <Label fx:id="labelLoading" text="Analisi in corso..." styleClass="loading-text"/>
+            <ProgressBar fx:id="loadingProgressBar" progress="0" prefWidth="280" styleClass="loading-progress-bar"/>
+        </VBox>
+    </StackPane>
+
+</StackPane>

@@ -1,0 +1,97 @@
+# ─────────────────────────────────────────────
+#  EcoSort AI — .gitignore
+# ─────────────────────────────────────────────
+
+# ── Segreti ──────────────────────────────────
+.env
+.env.local
+*.key
+credentials.json
+service-account*.json
+
+# ── Modelli e pesi (troppo grandi per Git) ───
+# Distribuiti come asset delle GitHub Releases
+*.keras
+*.h5
+*.pb
+*.onnx
+*.tflite
+*.pt
+*.pth
+checkpoints/
+saved_model/
+
+# ── Dataset ──────────────────────────────────
+dataset/
+datasets/
+dataset_rifiuti/
+data/raw/
+uploads/
+*.zip
+*.tar.gz
+*.7z
+
+# ── Python ───────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+python-embedded/
+python-embed*/
+get-pip.py
+.ipynb_checkpoints/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+
+# ── Java / Maven ─────────────────────────────
+target/
+*.jar
+*.war
+*.class
+dependency-reduced-pom.xml
+.mvn/
+mvnw
+mvnw.cmd
+
+# ── Build / distribuzione ────────────────────
+*.exe
+EcoSortAI_Release/
+EcoSortAI_Release_Lite/
+app/
+
+# ── Log e temporanei ─────────────────────────
+*.log
+ecosort-server.log
+tmp/
+temp/
+
+# ── Media pesanti ────────────────────────────
+*.mp4
+*.mov
+*.avi
+
+# ── IDE ──────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.classpath
+.project
+.settings/
+nbproject/
+
+# ── Sistema operativo ────────────────────────
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
