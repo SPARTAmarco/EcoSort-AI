@@ -68,8 +68,15 @@ EcoSort-AI/
 │   ├── server/           Micro-server Flask che carica il modello .keras
 │   ├── pom.xml           Build Maven (shade plugin → jar unico)
 │   └── build.bat         Script di build per Windows
-├── raspberry-pi/         Codice di inferenza a bordo macchina
+├── raspberry-pi/         Inferenza a bordo macchina
+│   └── classifica_pi.py  LiteRT + regola di decisione a costo
 ├── training/             Pipeline di addestramento (Google Colab)
+│   ├── EcoSort_Colab.ipynb   Notebook guidato, dal dataset al .tflite
+│   ├── prepara_dataset.py    Dedup (md5 + dhash) e split stratificato
+│   ├── ecosort_benchmark.py  Confronto di 4 backbone con selezione a costo
+│   ├── train_finale.py       Training definitivo su train + validation
+│   ├── converti_tflite.py    Export float32/float16/INT8 con verifica
+│   └── ecosort_decisione.py  Matrice di costo (condiviso col Pi)
 ├── docs/                 Documentazione tecnica e decisioni di progetto
 ├── .env.example          Template per la chiave API Gemini
 └── LICENSE               MIT

@@ -1,6 +1,6 @@
 # Raspberry Pi
 
-Codice che gira a bordo della macchina: scatto, classificazione, rotazione della piattaforma.
+Inferenza a bordo macchina: scatto, classificazione, scelta del bidone.
 
 ## Ambiente
 
@@ -8,24 +8,45 @@ Codice che gira a bordo della macchina: scatto, classificazione, rotazione della
 - CSI Camera Module V2.1 via `picamera2`
 - Servo SG90 + piattaforma rotante con sensori Hall
 
+## File da avere nella stessa cartella sul Pi
+
+```text
+classifica_pi.py        questo repository
+ecosort_decisione.py    da ../training/ (modulo condiviso)
+rifiuti.tflite          dalla sezione Releases
+config.json             prodotto da converti_tflite.py
+```
+
 ## Installazione
 
-Sul Pi l'ambiente virtuale non è attivo: installare a livello di sistema.
+Sul Pi l'ambiente virtuale non è attivo: si installa a livello di sistema.
 
 ```bash
 sudo apt install -y python3-picamera2 python3-numpy python3-pil
-pip install -r requirements-rpi.txt --break-system-packages
+pip install ai-edge-litert numpy pillow --break-system-packages
 ```
 
-Scaricare `newbest_model.tflite` dalla sezione Releases e posizionarlo in questa cartella.
+> Non usare `tflite-runtime`: è fermo alla 2.14.0 (ottobre 2023) e ha wheel solo fino a
+> Python 3.11, quindi sul Pi con Python 3.13 non si installa. Il successore ufficiale è
+> `ai-edge-litert`, con wheel manylinux aarch64 per cp310–cp314.
 
 ## Uso
 
 ```bash
-python3 classifica_pi.py          # ciclo normale
-python3 classifica_pi.py --bench  # misura la latenza di inferenza
+python3 classifica_pi.py --bench            # misura la latenza reale di inferenza
+python3 classifica_pi.py --foto prova.jpg   # classifica un file esistente
+python3 classifica_pi.py                    # INVIO per scattare con la camera
 ```
 
-La classe vincente viene tradotta in un'azione tramite la regola di decisione a costo
-descritta in [`../docs/matrice-costo-errori.md`](../docs/matrice-costo-errori.md):
-sotto la soglia implicita il rifiuto va in **indifferenziata**.
+## Come decide
+
+Il modello restituisce le tre probabilità; la scelta del bidone **non** è un `argmax`.
+`ecosort_decisione.py` calcola il costo atteso di ognuna delle quattro azioni
+(blu, giallo, verde, grigio) e sceglie quella che lo minimizza: se nessuna destinazione
+"vera" conviene, il rifiuto va in **indifferenziata**. La soglia non è un numero scelto a
+occhio, emerge dalla matrice di costo — dettagli in
+[`../docs/matrice-costo-errori.md`](../docs/matrice-costo-errori.md).
+
+Il preprocessing è incorporato nel `.tflite`: lo script passa l'immagine uint8 [0,255]
+direttamente al modello, quindi è impossibile che il preprocessing sul Pi diverga da
+quello usato in training.
