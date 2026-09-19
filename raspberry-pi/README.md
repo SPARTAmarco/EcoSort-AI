@@ -14,7 +14,7 @@ Inferenza a bordo macchina: scatto, classificazione, scelta del bidone.
 classifica_pi.py        questo repository
 ecosort_decisione.py    da ../training/ (modulo condiviso)
 rifiuti.tflite          Release v1.0.0 (float16, 8,3 MB)
-config.json             Release v1.0.0 (soglia 0,73, etichette, temperatura)
+config.json             Release v1.0.0 (etichette, matrice di costo, temperatura)
 ```
 
 ## Installazione

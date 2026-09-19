@@ -118,6 +118,26 @@ public class LocalAIService {
      * Cerca python.exe: prima in python-embedded/ vicino al JAR, poi nel PATH.
      */
     private String trovaPython(File jarDir) throws IOException {
+        // 0) Variabile d'ambiente esplicita (la imposta avvia.bat)
+        String daEnv = System.getenv("ECOSORT_PYTHON");
+        if (daEnv != null && !daEnv.isBlank() && testPythonExe(daEnv)) {
+            System.out.println("[LocalAI] Usando ECOSORT_PYTHON: " + daEnv);
+            return daEnv;
+        }
+
+        // 0b) Ambiente virtuale .venv creato da avvia.bat (CWD, cartella del JAR o la sua madre)
+        File jarParent = jarDir != null ? jarDir.getParentFile() : null;
+        for (File base : new File[]{new File("."), jarDir, jarParent}) {
+            if (base == null) continue;
+            for (String rel : new String[]{".venv/Scripts/python.exe", ".venv/bin/python"}) {
+                File venvExe = new File(base, rel).getAbsoluteFile();
+                if (venvExe.exists() && testPythonExe(venvExe.getAbsolutePath())) {
+                    System.out.println("[LocalAI] Usando .venv: " + venvExe.getAbsolutePath());
+                    return venvExe.getAbsolutePath();
+                }
+            }
+        }
+
         // 1) Python embedded nella cartella del JAR
         for (File base : new File[]{jarDir, new File(".")}) {
             if (base == null) continue;

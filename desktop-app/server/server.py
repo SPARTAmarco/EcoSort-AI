@@ -18,7 +18,7 @@ app = Flask(__name__)
 
 # ── Configurazione ──────────────────────────────────────────────────────────
 IMG_SIZE  = 224
-SOGLIA_CONFIDENZA = 0.55   # Sotto questa soglia → "Indifferenziata"
+SOGLIA_CONFIDENZA = 0.73   # Solo se manca config.json: miglior soglia fissa del benchmark
 
 CLASSI = {
     0: "carta_e_cartone",
@@ -98,16 +98,54 @@ def carica_modello():
 
 def preprocessa(img_bytes: bytes) -> np.ndarray:
     """
-    Preprocessing identico al training ResNet50V2:
-    resize 224x224, poi preprocess_input (scala a [-1, 1]).
+    Solo resize a 224x224: la normalizzazione di EfficientNetB0 e' incorporata
+    nel modello, che si aspetta pixel grezzi in [0, 255]. Stesso percorso del Pi
+    (classifica_pi.py): se i due divergessero, il modello sbaglierebbe in silenzio.
     """
     img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
-    img = img.resize((IMG_SIZE, IMG_SIZE), Image.LANCZOS)
-    arr = np.array(img, dtype=np.float32)
-    # ResNet50V2 preprocess_input: x / 127.5 - 1.0  →  range [-1, 1]
-    arr = arr / 127.5 - 1.0
+    img = img.resize((IMG_SIZE, IMG_SIZE), Image.BILINEAR)
+    arr = np.array(img, dtype=np.float32)   # [0, 255], nessuna scalatura
     return np.expand_dims(arr, axis=0)
 
+
+
+# ── Regola di decisione (identica al Raspberry Pi) ──────────────────────────
+# Si legge config.json della Release v1.0.0: temperatura di calibrazione e
+# matrice di costo. Stessa formula di training/ecosort_decisione.py:
+#     azione* = argmin_a  SUM_c  P(c|x) * Costo[c][a]
+# con "indifferenziata" come quarta azione possibile. Se config.json manca si
+# ripiega sulla soglia fissa SOGLIA_CONFIDENZA.
+AZIONI = ["carta_e_cartone", "plastica", "vetro_e_metallo", "indifferenziata"]
+REGOLA = {"temperatura": 1.0, "costo": None}
+
+
+def carica_regola():
+    import json
+    cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
+    if not os.path.exists(cfg_path):
+        print(f"[EcoSort] config.json assente: uso la soglia fissa {SOGLIA_CONFIDENZA}")
+        return
+    with open(cfg_path, encoding="utf-8") as f:
+        cfg = json.load(f)
+    REGOLA["temperatura"] = float(cfg.get("temperatura", 1.0))
+    if cfg.get("usa_regola_costo", True) and "matrice_costo" in cfg:
+        REGOLA["costo"] = np.array(cfg["matrice_costo"], dtype=np.float64)
+    print(f"[EcoSort] Regola: {'costo atteso' if REGOLA['costo'] is not None else 'soglia fissa'}"
+          f" | temperatura {REGOLA['temperatura']:.3f}")
+
+
+def decidi(probs: np.ndarray):
+    """Ritorna (classe, probabilita calibrate, sotto_soglia)."""
+    p = np.clip(np.asarray(probs, dtype=np.float64), 1e-12, 1.0)
+    p = np.exp(np.log(p) / REGOLA["temperatura"])
+    p = p / p.sum()
+    if REGOLA["costo"] is not None:
+        azione = int((p @ REGOLA["costo"]).argmin())
+        if azione == 3:
+            return int(p.argmax()), p, True
+        return azione, p, False
+    best = int(p.argmax())
+    return best, p, bool(p[best] < SOGLIA_CONFIDENZA)
 
 
 # ── Softmax numericamente stabile ───────────────────────────────────────────
@@ -145,7 +183,7 @@ def classifica():
             # L'ultimo layer ha già Softmax, usiamo direttamente le probabilità predette
             probs = output.astype(np.float64)
 
-        best_idx  = int(np.argmax(probs))
+        best_idx, probs, sotto = decidi(probs)
         best_prob = float(probs[best_idx])
         tutte     = {CLASSI[i]: round(float(probs[i]), 6) for i in range(len(probs))}
 
@@ -159,7 +197,7 @@ def classifica():
             "confidenza": round(best_prob, 6),
             "tempo_ms":   round(elapsed, 1),
             "tutte":      tutte,
-            "sotto_soglia": False,
+            "sotto_soglia": sotto,
         })
 
     except Exception as e:
@@ -171,4 +209,5 @@ def classifica():
 # ── Entry point ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     carica_modello()
+    carica_regola()
     app.run(host="127.0.0.1", port=5891, debug=False)

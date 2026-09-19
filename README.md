@@ -34,8 +34,8 @@ Nessun pulsante da premere, nessuna scelta da fare: il rifiuto entra, il bidone 
 | `indifferenziata` | Grigio | ![#9CA3AF](https://placehold.co/12x12/9CA3AF/9CA3AF.png) `#9CA3AF` |
 
 `indifferenziata` non è una classe del modello: è l'**azione di fallback** scelta quando la
-confidenza non supera la **soglia di 0,73** e quindi non basta a giustificare il rischio di un
-errore (vedi [matrice di costo](docs/matrice-costo-errori.md)).
+confidenza non basta a giustificare il rischio di un errore. Non c'è una soglia unica: la
+decide la [matrice di costo](docs/matrice-costo-errori.md), rifiuto per rifiuto.
 
 ## Il modello
 
@@ -45,8 +45,11 @@ errore (vedi [matrice di costo](docs/matrice-costo-errori.md)).
 | **Selezione** | Vincitore di un benchmark su 4 backbone: MobileNetV3Large, EfficientNetB0, EfficientNetV2B0, ResNet50V2 |
 | **Dataset** | 8.139 immagini reali: fusione di TrashNet, Garbage Classification v2 e Garbage 12 classi, deduplicate (md5 + dhash) e riclassificate in 3 macro-categorie |
 | **Training** | Google Colab, GPU NVIDIA T4, in due fasi: testa di classificazione, poi fine-tuning |
-| **Accuratezza** | **96,8%** |
-| **Soglia di confidenza** | **0,73**: sotto soglia il rifiuto va in indifferenziata |
+| **Accuratezza** | **97,3%** sul test set: 1.093 immagini mai viste in training (96,8% nel benchmark comparativo) |
+| **Decisione** | Regola bayesiana a costo atteso minimo, con probabilità calibrate (temperature scaling, T = 0,749) |
+| **Coverage** | 96,2% dei rifiuti smistati; il 3,8% più incerto va in indifferenziata |
+| **Errori gravi** | Vetro/metallo nel bidone di carta o plastica: **da 9 a 3** rispetto all'`argmax` |
+| **Calibrazione** | ECE da 0,027 a **0,007** |
 | **Input** | 224×224 RGB, preprocessing incorporato nel modello esportato |
 | **Deployment** | `rifiuti.tflite` (float16, 8,3 MB) via `ai-edge-litert` sul Raspberry Pi · `newbest_model.keras` nativo nell'app desktop |
 
@@ -104,34 +107,25 @@ I pesi **non sono versionati nel repository**: si scaricano dalla
 
 ## Avvio rapido
 
-### App desktop (Windows)
+### App desktop (Windows) — un doppio clic
 
-```bash
-# 1. Dipendenze Python del server locale
-cd desktop-app/server
-pip install -r requirements.txt
-
-# 2. Scaricare newbest_model.keras dalle Releases in questa cartella
-
-# 3. Build dell'applicazione JavaFX
-cd ..
-mvn clean package        # oppure: build.bat
-
-# 4. Avvio
-java -jar target/ecosort-ai-1.0.0.jar
+```bat
+desktop-app\avvia.bat
 ```
 
-L'app parte in **modalità offline** e avvia il server Flask in background: il primo caricamento
-di TensorFlow richiede 6-7 secondi. Quando la barra di stato mostra *"Server offline pronto!"*
-si può analizzare la prima immagine.
+La prima volta scarica i modelli dalla Release v1.0.0, crea un ambiente Python `.venv` con
+TensorFlow e compila l'app con Maven (qualche minuto). Dalla seconda volta parte subito.
+Servono solo **Python 3.10–3.13**, **JDK 21** e **Maven**.
 
-Per la **modalità online** (Google Gemini) serve una chiave API:
-
-```bash
-cp .env.example .env      # e inserire la propria chiave
+```bat
+desktop-app\avvia.bat test        :: banco di prova nel browser (webcam o foto), senza JavaFX
+desktop-app\avvia.bat ricompila   :: ricompila il jar dopo una modifica al codice Java
 ```
 
-La chiave può anche essere incollata direttamente nell'interfaccia dell'app.
+L'app parte in **modalità offline**: il server Flask locale carica `newbest_model.keras`
+(il primo caricamento di TensorFlow richiede qualche secondo). Per la **modalità online**
+(Google Gemini) serve una chiave API in `.env` (vedi `.env.example`) oppure incollata
+nell'interfaccia dell'app.
 
 ### Raspberry Pi
 
