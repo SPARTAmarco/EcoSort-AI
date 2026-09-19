@@ -1,0 +1,58 @@
+{
+  "labels": [
+    "carta_e_cartone",
+    "plastica",
+    "vetro_e_metallo"
+  ],
+  "azioni": [
+    "carta_e_cartone",
+    "plastica",
+    "vetro_e_metallo",
+    "indifferenziata"
+  ],
+  "backbone": "EfficientNetB0",
+  "epoche_fase1": 11,
+  "epoche_fase2": 10,
+  "matrice_costo": [
+    [
+      0.0,
+      3.0,
+      2.0,
+      1.0
+    ],
+    [
+      4.0,
+      0.0,
+      5.0,
+      1.0
+    ],
+    [
+      9.0,
+      8.0,
+      0.0,
+      1.5
+    ]
+  ],
+  "soglia_fallback": 0.7,
+  "temperatura": 0.7487947269303201,
+  "usa_regola_costo": true,
+  "costo_atteso_benchmark": 0.13586459286367794,
+  "accuracy": 0.9725526075022873,
+  "costo_argmax": 0.12991765782250686,
+  "costo_soglia70": 0.12397072278133578,
+  "costo_decisione": 0.11390667886550777,
+  "coverage": 0.9615736505032022,
+  "gravi_argmax": 9,
+  "gravi_decisione": 3,
+  "ece_prima": 0.026730154265205648,
+  "ece_dopo": 0.006781274217728006,
+  "modello_keras": "newbest_model.keras",
+  "n_test": 1093,
+  "modello_tflite": "rifiuti.tflite",
+  "quantizzazione": "float16",
+  "input_uint8": false,
+  "preprocessing_incorporato": true,
+  "accuracy_tflite": 0.9725526075022873,
+  "costo_tflite": 0.11527904849039342,
+  "gravi_tflite": 3
+}

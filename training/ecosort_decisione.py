@@ -173,9 +173,11 @@ def costo_medio_soglia(y_true, probs, soglia=0.70, costo=COSTO):
 def soglia_migliore(y_true, probs, costo=COSTO):
     """
     Cerca la soglia fissa ottimale a posteriori. Non serve per il deployment:
-    serve a dimostrare che perfino la MIGLIORE soglia possibile non batte la
-    regola a costo, perche' una soglia unica non puo' distinguere il vetro
-    dalla carta.
+    serve come termine di confronto. Attenzione: e' tarata sugli stessi dati
+    su cui viene misurata, quindi il suo costo e' una stima ottimistica. Nel
+    benchmark reale e' risultata di poco migliore sul costo medio, ma la regola
+    a costo non ha parametri tarati sui dati e dimezza gli errori gravi,
+    perche' una soglia unica non puo' distinguere il vetro dalla carta.
     """
     probs = np.asarray(probs)
     migliore = (0.0, float('inf'))

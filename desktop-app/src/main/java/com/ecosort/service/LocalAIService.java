@@ -80,10 +80,16 @@ public class LocalAIService {
      * Cerca server.py in varie posizioni possibili.
      */
     private File trovareServerPy(File jarDir) {
+        // Quale server avviare: server.py (Keras, predefinito) oppure
+        // server_lite.py (TFLite) se ECOSORT_SERVER lo chiede (avvia.bat lite)
+        String nome = System.getenv("ECOSORT_SERVER");
+        if (nome == null || nome.isBlank()) nome = "server.py";
+        System.out.println("[LocalAI] Server richiesto: " + nome);
+
         // Candidati in ordine di preferenza
         String[] candidati = {
-            "server/server.py",           // relativo alla CWD (mvn javafx:run)
-            "../server/server.py",        // un livello su
+            "server/" + nome,             // relativo alla CWD (mvn javafx:run)
+            "../server/" + nome,          // un livello su
         };
         // Prima prova relativo alla CWD
         for (String rel : candidati) {
@@ -95,7 +101,7 @@ public class LocalAIService {
         }
         // Poi prova relativo al JAR
         if (jarDir != null) {
-            File f = new File(jarDir, "server/server.py");
+            File f = new File(jarDir, "server/" + nome);
             if (f.exists()) {
                 System.out.println("[LocalAI] Trovato server.py (jar-rel): " + f.getAbsolutePath());
                 return f;
@@ -103,7 +109,7 @@ public class LocalAIService {
             // Risali di qualche livello (es. dentro target/)
             File parent = jarDir.getParentFile();
             while (parent != null) {
-                f = new File(parent, "server/server.py");
+                f = new File(parent, "server/" + nome);
                 if (f.exists()) {
                     System.out.println("[LocalAI] Trovato server.py (parent): " + f.getAbsolutePath());
                     return f;
@@ -353,13 +359,19 @@ public class LocalAIService {
 
         Categoria categoria = Categoria.fromString(categoriaStr);
 
+        // Il server dichiara quale modello ha usato davvero (Keras o TFLite)
+        String motore = json.has("motore")
+                ? json.get("motore").getAsString()
+                : "Modello locale";
+
         return new ClassificationResult(
                 categoria,
                 confidenza,
                 null,
                 Modalita.OFFLINE_TFLITE,
                 tempoMs,
-                sottoSoglia
+                sottoSoglia,
+                motore
         );
     }
 

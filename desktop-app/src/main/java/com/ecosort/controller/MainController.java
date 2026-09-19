@@ -422,7 +422,8 @@ public class MainController implements Initializable {
         labelConfidenzaPct.setText(pct > 0 ? pct + "%" : "\u2014");
         labelTempo.setText(r.getTempoMs() + " ms");
         labelModalitaUsata.setText(
-                r.getModalita() == Modalita.ONLINE_GEMINI ? "Gemini 2.5 Flash" : "TFLite locale");
+                r.getModalita() == Modalita.ONLINE_GEMINI ? "Gemini 2.5 Flash-Lite"
+                        : (r.getMotore() != null ? r.getMotore() : "Modello locale"));
 
         try {
             colorBar.setFill(Color.web(cat.hex));
@@ -435,8 +436,8 @@ public class MainController implements Initializable {
         if (r.isSottoSoglia()) {
             // Confidenza troppo bassa: mostra spiegazione onesta
             labelMotivo.setText(
-                    "\u26a0\ufe0f  Confidenza insufficiente (" + pct + "%) \u2014 l\u0027immagine non corrisponde "
-                            + "chiaramente ad alcuna categoria. "
+                    "\u26a0\ufe0f  Classificazione incerta (" + pct + "%) \u2014 il rischio di mandarlo nel bidone "
+                            + "sbagliato \u00e8 troppo alto, quindi va in indifferenziata. "
                             + "Prova con una foto pi\u00f9 nitida o inquadra meglio il rifiuto.");
             rowMotivo.setVisible(true);
             rowMotivo.setManaged(true);
@@ -450,8 +451,8 @@ public class MainController implements Initializable {
         panelRisultato.setManaged(true);
 
         String statusMsg = r.isSottoSoglia()
-                ? "\u26a0\ufe0f Confidenza bassa (" + pct + "%) \u2014 classificato come Indifferenziata"
-                : "\u2705 " + cat.label + " \u2014 " + pct + "% in " + r.getTempoMs() + " ms";
+                ? "\u26a0\ufe0f Classificazione incerta (" + pct + "%) \u2014 mandato in Indifferenziata"
+                : "\u2705 " + cat.label + (pct > 0 ? " \u2014 " + pct + "%" : "") + " in " + r.getTempoMs() + " ms";
         setStatus(statusMsg);
     }
 

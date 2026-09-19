@@ -28,8 +28,8 @@ pip install ai-edge-litert numpy pillow --break-system-packages
 
 ## Decisioni tecniche
 
-**Preprocessing incorporato nel modello.** Il `.tflite` accetta direttamente l'immagine uint8
-[0,255] della camera. Elimina per costruzione il bug più comune del deployment: preprocessing
+**Preprocessing incorporato nel modello.** Il `.tflite` accetta direttamente i pixel grezzi
+[0,255] della camera (float32 nella variante float16 in uso, uint8 nella INT8). Elimina per costruzione il bug più comune del deployment: preprocessing
 divergente tra training e dispositivo.
 
 **Output float32 anche in INT8.** Le probabilità alimentano la regola di decisione a costo;

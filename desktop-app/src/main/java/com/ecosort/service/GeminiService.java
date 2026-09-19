@@ -198,7 +198,8 @@ public class GeminiService {
         String pulito = testo.toLowerCase().trim();
         
         // Estrai robustamente la categoria dal testo grezzo
-        String categoriaStr = "plastica";
+        // Risposta non riconosciuta: meglio indifferenziata che un bidone a caso
+        String categoriaStr = "indifferenziata";
         if (pulito.contains("carta") || pulito.contains("cartone")) {
             categoriaStr = "carta_e_cartone";
         } else if (pulito.contains("vetro") || pulito.contains("metallo")) {
@@ -223,11 +224,11 @@ public class GeminiService {
 
         return new ClassificationResult(
                 categoria,
-                0.99, // Confidenza fissa al 99% per azzerare i tempi di calcolo dell'API
+                0.0,  // Gemini non restituisce una probabilita': l'interfaccia mostra "—" invece di un numero inventato
                 motivo,
                 Modalita.ONLINE_GEMINI,
                 tempoMs,
-                false
+                "indifferenziata".equals(categoriaStr)
         );
     }
 

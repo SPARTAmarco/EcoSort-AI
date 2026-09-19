@@ -38,10 +38,18 @@ public class ClassificationResult {
     private final Modalita  modalita;
     private final long      tempoMs;
     private final boolean   sottoSoglia;
+    private final String    motore;      // es. "Keras · TensorFlow", "TFLite · LiteRT"
 
     public ClassificationResult(Categoria categoria, double confidenza,
                                 String motivo, Modalita modalita,
                                 long tempoMs, boolean sottoSoglia) {
+        this(categoria, confidenza, motivo, modalita, tempoMs, sottoSoglia, null);
+    }
+
+    public ClassificationResult(Categoria categoria, double confidenza,
+                                String motivo, Modalita modalita,
+                                long tempoMs, boolean sottoSoglia, String motore) {
+        this.motore     = motore;
         this.categoria  = categoria;
         this.confidenza = confidenza;
         this.motivo     = motivo;
@@ -56,5 +64,6 @@ public class ClassificationResult {
     public Modalita  getModalita()    { return modalita; }
     public long      getTempoMs()     { return tempoMs; }
     public boolean   isSottoSoglia()  { return sottoSoglia; }
+    public String    getMotore()      { return motore; }
     public int       getConfPct()     { return (int) Math.round(confidenza * 100); }
 }

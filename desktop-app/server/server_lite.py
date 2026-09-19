@@ -32,12 +32,13 @@ LABELS = {
 
 # ── Stato globale ────────────────────────────────────────────────────────────
 interpreter    = None
+RUNTIME        = "TFLite"
 input_details  = None
 output_details = None
 
 # ── Caricamento modello TFLite ───────────────────────────────────────────────
 def carica_modello():
-    global interpreter, input_details, output_details
+    global interpreter, input_details, output_details, RUNTIME
 
     qui = os.path.dirname(os.path.abspath(__file__))
     model_path = os.path.join(qui, "rifiuti.tflite")            # Release v1.0.0 (float16)
@@ -49,15 +50,18 @@ def carica_modello():
     try:
         from ai_edge_litert.interpreter import Interpreter
         interpreter = Interpreter(model_path=model_path, num_threads=4)
+        RUNTIME = "TFLite \u00b7 LiteRT"
         print("[EcoSort] Runtime: ai-edge-litert")
     except ImportError:
         try:
             import tflite_runtime.interpreter as tflite
             interpreter = tflite.Interpreter(model_path=model_path)
+            RUNTIME = "TFLite \u00b7 tflite-runtime"
             print("[EcoSort] Runtime: tflite-runtime")
         except ImportError:
             import tensorflow as tf
             interpreter = tf.lite.Interpreter(model_path=model_path)
+            RUNTIME = "TFLite \u00b7 TensorFlow"
             print("[EcoSort] Runtime: tensorflow lite (fallback)")
 
     interpreter.allocate_tensors()
@@ -175,6 +179,7 @@ def classifica():
             "tempo_ms":     round(elapsed, 1),
             "tutte":        tutte,
             "sotto_soglia": sotto,
+            "motore":       RUNTIME,
         })
 
     except Exception as e:

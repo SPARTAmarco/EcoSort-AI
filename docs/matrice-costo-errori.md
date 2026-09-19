@@ -55,12 +55,21 @@ Range 40 %–88 % contro il 70 % fisso: la soglia unica è una semplificazione g
 - plastica: 0,871
 - vetro_e_metallo: 1,645
 
-## Validazione su dati sintetici (modello al 91,2 %)
+## Risultati reali (modello finale, test set di 1.093 immagini)
 
-| regola | costo medio | coverage | errori gravi (vetro nel bidone sbagliato) |
-|---|---|---|---|
-| argmax | 0,4685 | 100 % | 191 |
-| soglia 0,70 | 0,3622 | 81,9 % | — |
-| decisione a costo | 0,3942 | 73,7 % | **26** |
+| regola | costo medio | errori gravi (vetro/metallo nel blu o nel giallo) |
+|---|---|---|
+| `argmax` | 0,130 | 9 |
+| soglia fissa 0,70 | 0,124 | — |
+| **decisione a costo** | **0,114** | **3** |
 
-Errori gravi ridotti dell'86 %.
+Con la regola a costo il 96,2 % dei rifiuti va in un bidone di raccolta e il 3,8 % più incerto
+in indifferenziata. In cambio, 6 pezzi di vetro/metallo su 9 non finiscono più nel macero della
+carta o nella plastica.
+
+**Nota onesta sul benchmark.** Nel confronto tra i 4 backbone, la *migliore soglia fissa*
+cercata a posteriori (0,73 per EfficientNetB0) ha ottenuto un costo medio leggermente più basso
+della regola a costo (0,126 contro 0,136). Quella soglia però è ottimizzata sugli stessi dati su
+cui viene misurata, quindi è una stima ottimistica; la regola a costo non ha parametri tarati sui
+dati e riduce gli errori gravi (da 10 a 2 nel benchmark). Per questo in produzione resta la
+regola a costo.

@@ -141,7 +141,7 @@ def main():
           f"{errore_calibrazione(applica_temperatura(p_cal, T), y_cal):.4f}")
 
     # --- valutazione finale ---------------------------------------------- #
-    print("\n--- Valutazione sul test set (mai usato finora) ---")
+    print("\n--- Valutazione sul test set (mai usato in training) ---")
     from ecosort_decisione import riepilogo, azione_ottima, costo_medio
     from sklearn.metrics import classification_report, confusion_matrix
 

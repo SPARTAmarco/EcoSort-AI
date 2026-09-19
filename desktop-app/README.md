@@ -16,6 +16,7 @@ Doppio clic su **`avvia.bat`**. Fa tutto da solo e, dalla seconda volta, salta i
 | comando | cosa fa |
 |---|---|
 | `avvia.bat` | prepara e apre l'app |
+| `avvia.bat lite` | apre l'app con `rifiuti.tflite` invece del `.keras`: lo stesso file del Raspberry |
 | `avvia.bat test` | banco di prova nel browser (`tools/prova_pc.py`): webcam o foto trascinata, stessa logica del Raspberry |
 | `avvia.bat ricompila` | ricompila il jar dopo una modifica al codice Java |
 

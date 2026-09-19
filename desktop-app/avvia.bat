@@ -6,7 +6,8 @@ title EcoSort AI - Avvio app desktop
 :: ============================================================================
 ::  EcoSort AI - avvio con un doppio clic
 ::
-::    avvia.bat              prepara tutto (solo la prima volta) e apre l'app
+::    avvia.bat              prepara tutto (solo la prima volta) e apre l'app (modello Keras)
+::    avvia.bat lite         apre l'app con il modello TFLite, lo stesso file del Raspberry
 ::    avvia.bat test         apre il banco di prova nel browser (webcam o foto)
 ::    avvia.bat ricompila    forza la ricompilazione del jar e poi apre l'app
 ::
@@ -61,6 +62,15 @@ set "ECOSORT_PYTHON=%VPY%"
 
 if /i "%MODO%"=="test" goto :test
 
+set "ECOSORT_SERVER=server.py"
+set "MOTORE=Keras (newbest_model.keras)"
+if /i not "%MODO%"=="lite" goto :motore_ok
+set "ECOSORT_SERVER=server_lite.py"
+set "MOTORE=TFLite (rifiuti.tflite, come sul Raspberry)"
+"%VPY%" -c "import ai_edge_litert" >nul 2>&1 || "%VPY%" -m pip install ai-edge-litert --quiet
+:motore_ok
+echo [OK] Modello offline: %MOTORE%
+
 :: ------------------------------------------------------------ 3. Java + jar
 where java >nul 2>&1 || (
     echo [ERR] Java non trovato. Serve il JDK 21: https://adoptium.net/
@@ -69,16 +79,31 @@ where java >nul 2>&1 || (
 if /i "%MODO%"=="ricompila" if exist "%JAR%" del "%JAR%"
 if exist "%JAR%" goto :jar_ok
 
-echo [..] Compilo l'app con Maven (solo la prima volta)
+echo [..] Compilo l'app con Maven (solo la prima volta, 1-2 minuti)
 set "MVN="
-where mvn >nul 2>&1 && set "MVN=mvn"
+for /f "delims=" %%M in ('where mvn.cmd 2^>nul') do if not defined MVN set "MVN=%%M"
+if not defined MVN if exist "C:\maven\bin\mvn.cmd" set "MVN=C:\maven\bin\mvn.cmd"
 if not defined MVN if exist "C:\Program Files\Maven\bin\mvn.cmd" set "MVN=C:\Program Files\Maven\bin\mvn.cmd"
 if not defined MVN if exist "C:\tools\maven\bin\mvn.cmd" set "MVN=C:\tools\maven\bin\mvn.cmd"
 if not defined MVN (
-    echo [ERR] Maven non trovato. Installa Apache Maven e aggiungilo al PATH.
+    echo [ERR] Maven non trovato. Installa Apache Maven e aggiungi la sua cartella bin al PATH.
     goto :errore
 )
-call "%MVN%" -q -B clean package -DskipTests || goto :errore
+echo [OK] Maven: %MVN%
+if not defined JAVA_HOME call :trova_java_home
+call "%MVN%" -B clean package -DskipTests
+if errorlevel 1 (
+    echo.
+    echo [ERR] La compilazione Maven e' fallita. Diagnostica:
+    echo       JAVA_HOME=%JAVA_HOME%
+    java -version
+    call "%MVN%" -v
+    goto :errore
+)
+if not exist "%JAR%" (
+    echo [ERR] Maven ha finito ma %JAR% non esiste.
+    goto :errore
+)
 
 :jar_ok
 echo [OK] %JAR%
@@ -113,6 +138,14 @@ curl -L --fail --progress-bar -o "server\%~1.part" "%RELEASE%/%~1" || (
 )
 move /y "server\%~1.part" "server\%~1" >nul
 echo [OK] server\%~1
+exit /b 0
+
+
+:: Ricava JAVA_HOME dal java nel PATH (Maven lo richiede)
+:trova_java_home
+for /f "tokens=2 delims==" %%J in ('java -XshowSettings:properties -version 2^>^&1 ^| findstr /c:"java.home"') do set "JAVA_HOME=%%J"
+if defined JAVA_HOME for /f "tokens=* delims= " %%J in ("%JAVA_HOME%") do set "JAVA_HOME=%%J"
+if defined JAVA_HOME echo [OK] JAVA_HOME impostato su %JAVA_HOME%
 exit /b 0
 
 :errore

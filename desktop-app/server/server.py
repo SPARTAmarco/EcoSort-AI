@@ -198,6 +198,7 @@ def classifica():
             "tempo_ms":   round(elapsed, 1),
             "tutte":      tutte,
             "sotto_soglia": sotto,
+            "motore":     "Keras \u00b7 TensorFlow",
         })
 
     except Exception as e:
