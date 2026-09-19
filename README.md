@@ -34,16 +34,21 @@ Nessun pulsante da premere, nessuna scelta da fare: il rifiuto entra, il bidone 
 | `indifferenziata` | Grigio | ![#9CA3AF](https://placehold.co/12x12/9CA3AF/9CA3AF.png) `#9CA3AF` |
 
 `indifferenziata` non è una classe del modello: è l'**azione di fallback** scelta quando la
-confidenza non è sufficiente a giustificare il rischio di un errore (vedi
-[matrice di costo](docs/matrice-costo-errori.md)).
+confidenza non supera la **soglia di 0,73** e quindi non basta a giustificare il rischio di un
+errore (vedi [matrice di costo](docs/matrice-costo-errori.md)).
 
 ## Il modello
 
-- **Architettura:** EfficientNetB0 con transfer learning (TensorFlow / Keras)
-- **Dataset:** 8.139 immagini reali, fusione di TrashNet + Garbage Classification v2 + Garbage 12 classi, deduplicate e riclassificate in 3 macro-categorie
-- **Accuratezza:** ~95% sul validation set
-- **Input:** 224×224 RGB, preprocessing incorporato nel modello esportato
-- **Deployment:** `.tflite` via `ai-edge-litert` sul Raspberry Pi, `.keras` nativo nell'app desktop
+| | |
+|---|---|
+| **Architettura** | EfficientNetB0, transfer learning da ImageNet (TensorFlow / Keras) |
+| **Selezione** | Vincitore di un benchmark su 4 backbone: MobileNetV3Large, EfficientNetB0, EfficientNetV2B0, ResNet50V2 |
+| **Dataset** | 8.139 immagini reali: fusione di TrashNet, Garbage Classification v2 e Garbage 12 classi, deduplicate (md5 + dhash) e riclassificate in 3 macro-categorie |
+| **Training** | Google Colab, GPU NVIDIA T4, in due fasi: testa di classificazione, poi fine-tuning |
+| **Accuratezza** | **96,8%** |
+| **Soglia di confidenza** | **0,73**: sotto soglia il rifiuto va in indifferenziata |
+| **Input** | 224×224 RGB, preprocessing incorporato nel modello esportato |
+| **Deployment** | `rifiuti.tflite` (float16, 8,3 MB) via `ai-edge-litert` sul Raspberry Pi · `newbest_model.keras` nativo nell'app desktop |
 
 > Il modello non ottimizza l'accuratezza pura ma **minimizza il danno all'impianto di riciclo**:
 > mandare vetro nel macero della carta costa 9.0, mandare carta nel vetro costa 2.0. La regola
@@ -69,14 +74,18 @@ EcoSort-AI/
 │   ├── pom.xml           Build Maven (shade plugin → jar unico)
 │   └── build.bat         Script di build per Windows
 ├── raspberry-pi/         Inferenza a bordo macchina
-│   └── classifica_pi.py  LiteRT + regola di decisione a costo
+│   ├── classifica_pi.py  LiteRT + regola di decisione a costo
+│   └── raccogli_foto.py  Raccolta di foto reali con la camera del Pi
 ├── training/             Pipeline di addestramento (Google Colab)
 │   ├── EcoSort_Colab.ipynb   Notebook guidato, dal dataset al .tflite
 │   ├── prepara_dataset.py    Dedup (md5 + dhash) e split stratificato
 │   ├── ecosort_benchmark.py  Confronto di 4 backbone con selezione a costo
 │   ├── train_finale.py       Training definitivo su train + validation
 │   ├── converti_tflite.py    Export float32/float16/INT8 con verifica
+│   ├── valuta_foto_pi.py     Valutazione sulle foto scattate dalla camera
 │   └── ecosort_decisione.py  Matrice di costo (condiviso col Pi)
+├── tools/
+│   └── prova_pc.py       Banco di prova da PC: webcam o foto, stessa logica del Pi
 ├── docs/                 Documentazione tecnica e decisioni di progetto
 ├── .env.example          Template per la chiave API Gemini
 └── LICENSE               MIT
@@ -84,15 +93,14 @@ EcoSort-AI/
 
 ## Modelli pre-addestrati
 
-I pesi **non sono versionati nel repository** (il `.keras` pesa 232 MB, oltre il limite di GitHub).
-Si scaricano dalla sezione [**Releases**](../../releases):
+I pesi **non sono versionati nel repository**: si scaricano dalla
+[**Release v1.0.0**](../../releases/tag/v1.0.0).
 
-| File | Dimensione | Uso |
-|---|---|---|
-| `newbest_model.keras` | ~232 MB | App desktop (modalità offline) |
-| `newbest_model.tflite` | ~24 MB | Raspberry Pi |
-
-Posizionarli rispettivamente in `desktop-app/server/` e `raspberry-pi/`.
+| File | Dimensione | Uso | Dove metterlo |
+|---|---|---|---|
+| `newbest_model.keras` | 69,3 MB | App desktop (modalità offline) | `desktop-app/server/` |
+| `rifiuti.tflite` | 8,3 MB | Raspberry Pi (float16) | `raspberry-pi/` |
+| `config.json` | 1,2 KB | Soglia, etichette, calibrazione per il Pi | `raspberry-pi/` |
 
 ## Avvio rapido
 
@@ -132,9 +140,19 @@ La chiave può anche essere incollata direttamente nell'interfaccia dell'app.
 sudo apt install -y python3-picamera2 python3-numpy python3-pil
 pip install -r raspberry-pi/requirements-rpi.txt --break-system-packages
 
-# Scaricare newbest_model.tflite dalle Releases in raspberry-pi/
+# Scaricare rifiuti.tflite e config.json dalla Release v1.0.0 in raspberry-pi/
+cp training/ecosort_decisione.py raspberry-pi/
 python3 raspberry-pi/classifica_pi.py
 ```
+
+### Prova da PC senza Raspberry
+
+```bash
+pip install flask pillow numpy tensorflow
+python tools/prova_pc.py      # apre il browser: webcam o trascina una foto
+```
+
+Usa lo stesso modello, lo stesso preprocessing e la stessa regola di decisione del Pi.
 
 ## Consiglio per la precisione
 

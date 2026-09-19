@@ -2,11 +2,24 @@
 EcoSort AI — Preparazione del dataset: inventario, deduplicazione, split stratificato.
 
 DA ESEGUIRE UNA VOLTA SOLA, prima di qualsiasi training.
-Produce split.json con le liste di file, cosi ogni training successivo usa
-ESATTAMENTE gli stessi split (riproducibilita) e non c'e' modo che
-un'immagine passi da validation a training tra un esperimento e l'altro.
+Produce split.json con le liste di file E le etichette gia risolte, cosi ogni
+training successivo usa ESATTAMENTE gli stessi split (riproducibilita) e non
+c'e' modo che un'immagine passi da validation a training tra un esperimento e
+l'altro.
 
-    python3 prepara_dataset.py --dataset /content/dataset --modo pi
+    python3 prepara_dataset.py --dataset /content/dataset --modo pi \
+                               --foto-pi /content/foto_pi
+
+NOVITA v2
+  - le etichette finiscono dentro split.json: il benchmark non deve piu
+    decodificare l'intero dataset solo per sapere quali classi ha (erano tre
+    passate complete su 8.000 immagini prima ancora di iniziare a addestrare)
+  - --foto-pi: le foto scattate dalla camera diventano il test set ufficiale,
+    con controllo di leakage incrociato contro il dataset web
+  - scansione hash in parallelo (I/O bound: sui 2 core di Colab va 2-3x)
+  - verifica anti-leakage a COPPIE (la vecchia assert controllava
+    l'intersezione dei tre insiemi insieme, che e' quasi sempre vuota anche
+    quando due split si sovrappongono)
 
 Modi:
   --modo pi        80/20 sul dataset web, il TEST vero sono le foto del Pi
@@ -16,6 +29,8 @@ Modi:
 """
 import os, sys, json, hashlib, argparse
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 from PIL import Image
 
@@ -26,9 +41,15 @@ POPCOUNT = np.array([bin(i).count('1') for i in range(256)], dtype=np.uint8)
 MODI = {'pi': (0.80, 0.20, 0.00), 'classico': (0.70, 0.15, 0.15), 'marco': (0.80, 0.10, 0.10)}
 
 
-def elenca(dataset_dir):
+def elenca(dataset_dir, classi_attese=None):
+    if not os.path.isdir(dataset_dir):
+        sys.exit(f"Cartella inesistente: {dataset_dir}")
     classi = sorted(d for d in os.listdir(dataset_dir)
                     if os.path.isdir(os.path.join(dataset_dir, d)))
+    if classi_attese is not None and classi != classi_attese:
+        sys.exit(f"Classi in {dataset_dir}: {classi}\nAttese: {classi_attese}\n"
+                 f"Le sottocartelle devono avere gli stessi nomi, o le etichette "
+                 f"del test set non corrisponderanno a quelle del training.")
     percorsi, etichette = [], []
     for i, c in enumerate(classi):
         for f in sorted(os.listdir(os.path.join(dataset_dir, c))):
@@ -49,24 +70,34 @@ def dhash(percorso, size=8):
     return np.packbits((a[:, 1:] > a[:, :-1]).flatten())
 
 
-def scansiona(percorsi):
+def _scansiona_uno(p):
+    """md5 + dhash di un singolo file. Ritorna None se il file e' illeggibile."""
+    try:
+        with open(p, 'rb') as f:
+            m = hashlib.md5(f.read()).hexdigest()
+        return m, dhash(p), None
+    except Exception as e:
+        return None, np.full(8, 255, dtype=np.uint8), str(e)
+
+
+def scansiona(percorsi, workers=8):
     """Ritorna md5, hash percettivi e maschera dei file validi.
     I file corrotti vengono ESCLUSI dal dataset: se restassero, il primo
-    batch che li incontra fa crashare il training a meta epoca."""
+    batch che li incontra fa crashare il training a meta epoca.
+
+    Parallelizzato con thread: e' lavoro di I/O e decodifica, non di CPU pura,
+    quindi il GIL non e' il collo di bottiglia."""
     md5, hashes, corrotti = [], [], []
     validi = np.ones(len(percorsi), dtype=bool)
-    for i, p in enumerate(percorsi):
-        try:
-            with open(p, 'rb') as f:
-                m = hashlib.md5(f.read()).hexdigest()
-            h = dhash(p)                      # entrambi calcolati PRIMA di appendere
-            md5.append(m); hashes.append(h)
-        except Exception as e:
-            corrotti.append((p, str(e)))
-            validi[i] = False
-            md5.append(None); hashes.append(np.full(8, 255, dtype=np.uint8))
-        if (i + 1) % 1000 == 0:
-            print(f"  scansionate {i+1}/{len(percorsi)}", flush=True)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for i, (m, h, err) in enumerate(pool.map(_scansiona_uno, percorsi, chunksize=32)):
+            md5.append(m)
+            hashes.append(h)
+            if err is not None:
+                corrotti.append((percorsi[i], err))
+                validi[i] = False
+            if (i + 1) % 2000 == 0:
+                print(f"  scansionate {i+1}/{len(percorsi)}", flush=True)
     assert len(md5) == len(percorsi) == len(hashes)
     return md5, np.array(hashes), corrotti, validi
 
@@ -80,6 +111,12 @@ class UnionFind:
     def unisci(self, a, b):
         ra, rb = self.trova(a), self.trova(b)
         if ra != rb: self.p[rb] = ra
+
+
+def distanze(blocco_a, blocco_b):
+    """Distanza di Hamming fra due blocchi di hash a 64 bit, vettorizzata."""
+    xor = blocco_a[:, None, :] ^ blocco_b[None, :, :]
+    return POPCOUNT[xor].sum(axis=2)
 
 
 def trova_duplicati(md5, hashes, blocco=256):
@@ -97,12 +134,10 @@ def trova_duplicati(md5, hashes, blocco=256):
     quasi = 0
     for i0 in range(0, n, blocco):
         blk = hashes[i0:i0 + blocco]
-        xor = blk[:, None, :] ^ hashes[None, :, :]
-        dist = POPCOUNT[xor].sum(axis=2)
+        dist = distanze(blk, hashes)
         for r in range(blk.shape[0]):
             i = i0 + r
-            vicini = np.where(dist[r] <= SOGLIA_HAMMING)[0]
-            for j in vicini:
+            for j in np.where(dist[r] <= SOGLIA_HAMMING)[0]:
                 if j > i:
                     if uf.trova(i) != uf.trova(j): quasi += 1
                     uf.unisci(i, j)
@@ -112,6 +147,20 @@ def trova_duplicati(md5, hashes, blocco=256):
     for i in range(n):
         cluster[uf.trova(i)].append(i)
     return cluster, esatti, quasi
+
+
+def leakage_incrociato(hashes_a, hashes_b, blocco=256):
+    """Quante immagini di A hanno un quasi-duplicato in B.
+    Serve per il test set del Pi: se una foto della scatola e' identica a una
+    del dataset web (capita se hai fotografato lo schermo o riusato immagini),
+    il test set e' contaminato e i numeri finali sono una bugia."""
+    if len(hashes_a) == 0 or len(hashes_b) == 0:
+        return np.zeros(len(hashes_a), dtype=bool)
+    sporche = np.zeros(len(hashes_a), dtype=bool)
+    for i0 in range(0, len(hashes_a), blocco):
+        d = distanze(hashes_a[i0:i0 + blocco], hashes_b)
+        sporche[i0:i0 + blocco] = (d <= SOGLIA_HAMMING).any(axis=1)
+    return sporche
 
 
 def split_stratificato(etichette, fr, seed=42):
@@ -128,15 +177,20 @@ def split_stratificato(etichette, fr, seed=42):
         idx_tr += list(idx[:n_tr])
         idx_va += list(idx[n_tr:n_tr + n_va])
         idx_te += list(idx[n_tr + n_va:])
-    return map(np.array, (idx_tr, idx_va, idx_te))
+    # dtype esplicito: con --modo pi il test e' vuoto, e np.array([]) sarebbe
+    # float64, che non si puo' usare come indice (la v1 crashava proprio qui)
+    return (np.array(v, dtype=np.int64) for v in (idx_tr, idx_va, idx_te))
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--dataset', default='/content/dataset')
+    ap.add_argument('--foto-pi', default=None,
+                    help='cartella con le foto scattate dalla camera: diventano il test set')
     ap.add_argument('--modo', default='pi', choices=list(MODI))
     ap.add_argument('--out', default='split.json')
     ap.add_argument('--tieni-duplicati', action='store_true')
+    ap.add_argument('--seed', type=int, default=42)
     a = ap.parse_args()
 
     classi, percorsi, etichette = elenca(a.dataset)
@@ -178,28 +232,71 @@ def main():
         da_tenere = np.where(validi)[0]
         print("  [--tieni-duplicati] nessuna rimozione")
 
-    idx_tr, idx_va, idx_te = split_stratificato(etichette[da_tenere], MODI[a.modo])
+    idx_tr, idx_va, idx_te = split_stratificato(etichette[da_tenere], MODI[a.modo], a.seed)
     idx_tr, idx_va, idx_te = da_tenere[idx_tr], da_tenere[idx_va], da_tenere[idx_te]
 
+    # ------------------------------------------------------------------ #
+    # Test set dalle foto reali del Pi
+    # ------------------------------------------------------------------ #
+    test_percorsi = [percorsi[i] for i in idx_te]
+    test_etichette = [int(etichette[i]) for i in idx_te]
+    origine_test = f"split interno del dataset web ({len(idx_te)} img)"
+
+    if a.foto_pi:
+        print(f"\nTest set dalle foto del Pi: {a.foto_pi}")
+        _, p_pi, y_pi = elenca(a.foto_pi, classi_attese=classi)
+        print(f"  {len(p_pi)} foto trovate")
+        for i, c in enumerate(classi):
+            print(f"    {c:>18}: {(y_pi == i).sum():4d}")
+        _, h_pi, corr_pi, val_pi = scansiona(p_pi)
+        if corr_pi:
+            print(f"  {len(corr_pi)} foto corrotte, escluse")
+        # nessuna foto del Pi deve assomigliare a una del dataset web
+        h_train = hashes[np.concatenate([idx_tr, idx_va])]
+        sporche = leakage_incrociato(h_pi, h_train)
+        tieni = val_pi & ~sporche
+        if sporche.any():
+            print(f"  ATTENZIONE: {int(sporche.sum())} foto del Pi hanno un quasi-duplicato "
+                  f"nel dataset web -> escluse dal test set")
+        if idx_te.size:
+            print(f"  Nota: lo split '{a.modo}' aveva gia {len(idx_te)} immagini di test; "
+                  f"le foto del Pi le sostituiscono (sono il test che conta).")
+        test_percorsi = [p for p, t in zip(p_pi, tieni) if t]
+        test_etichette = [int(y) for y, t in zip(y_pi, tieni) if t]
+        origine_test = f"FOTO REALI dalla camera ({len(test_percorsi)} img)"
+
+    # ------------------------------------------------------------------ #
     print(f"\nSplit '{a.modo}' {MODI[a.modo]}:")
-    for nome, idx in [('train', idx_tr), ('val', idx_va), ('test', idx_te)]:
-        if len(idx) == 0:
-            print(f"  {nome:>6}: 0  (il test set sono le foto scattate dal Pi)")
+    gruppi = [('train', [percorsi[i] for i in idx_tr], [int(etichette[i]) for i in idx_tr]),
+              ('val',   [percorsi[i] for i in idx_va], [int(etichette[i]) for i in idx_va]),
+              ('test',  test_percorsi, test_etichette)]
+    for nome, pp, yy in gruppi:
+        if not pp:
+            print(f"  {nome:>6}: 0")
             continue
-        dist = np.bincount(etichette[idx], minlength=len(classi))
-        ic = 1.96 * np.sqrt(0.95 * 0.05 / len(idx)) * 100
-        print(f"  {nome:>6}: {len(idx):5d}  {dict(zip(classi, dist))}  IC95 +-{ic:.2f}%")
+        dist = np.bincount(np.array(yy), minlength=len(classi))
+        ic = 1.96 * np.sqrt(0.95 * 0.05 / len(pp)) * 100
+        print(f"  {nome:>6}: {len(pp):5d}  {dict(zip(classi, dist))}  IC95 +-{ic:.2f}%")
+    print(f"  test: {origine_test}")
 
-    # verifica anti-leakage: nessun indice condiviso, nessun cluster spezzato
-    assert not (set(idx_tr) & set(idx_va) & set(idx_te))
-    assert len(set(idx_tr) | set(idx_va) | set(idx_te)) == len(idx_tr) + len(idx_va) + len(idx_te)
-    print("  verifica leakage: OK (nessuna immagine in due split)")
+    # verifica anti-leakage: a coppie, non sull'intersezione dei tre insiemi
+    s_tr, s_va, s_te = (set(g[1]) for g in gruppi)
+    for (na, sa), (nb, sb) in [(('train', s_tr), ('val', s_va)),
+                               (('train', s_tr), ('test', s_te)),
+                               (('val', s_va), ('test', s_te))]:
+        comuni = sa & sb
+        assert not comuni, f"LEAKAGE {na}/{nb}: {len(comuni)} file in comune, es. {list(comuni)[:3]}"
+    print("  verifica leakage a coppie: OK")
 
-    json.dump({'classi': classi, 'modo': a.modo,
-               'train': [percorsi[i] for i in idx_tr],
-               'val':   [percorsi[i] for i in idx_va],
-               'test':  [percorsi[i] for i in idx_te]},
-              open(a.out, 'w'), indent=1)
+    json.dump({
+        'classi': classi,
+        'modo': a.modo,
+        'seed': a.seed,
+        'origine_test': origine_test,
+        'train': gruppi[0][1], 'y_train': gruppi[0][2],
+        'val':   gruppi[1][1], 'y_val':   gruppi[1][2],
+        'test':  gruppi[2][1], 'y_test':  gruppi[2][2],
+    }, open(a.out, 'w'), indent=1)
     print(f"\nScritto {a.out} — usalo in ecosort_benchmark.py (SPLIT_JSON)")
 
 

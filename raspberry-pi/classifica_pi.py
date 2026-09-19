@@ -22,7 +22,8 @@ import argparse, json, os, sys, time
 import numpy as np
 from PIL import Image
 
-from ecosort_decisione import COSTO, CLASSI, AZIONI, BIDONI, azione_ottima
+from ecosort_decisione import (COSTO, CLASSI, AZIONI, BIDONI, azione_ottima,
+                               applica_temperatura)
 
 # ai-edge-litert e' il pacchetto attuale; gli altri due sono fallback per
 # ambienti piu vecchi, cosi lo script non muore per un problema di packaging.
@@ -44,6 +45,11 @@ MODELLO = os.path.join(QUI, cfg.get('modello_tflite', 'rifiuti.tflite'))
 COSTO_M = np.array(cfg.get('matrice_costo', COSTO.tolist()))
 USA_COSTO = cfg.get('usa_regola_costo', True)
 SOGLIA = cfg.get('soglia_fallback', 0.70)
+# Temperatura di calibrazione stimata su Colab (train_finale.py). Il modello
+# esporta il softmax, non i logit, ma softmax(log(p)/T) == softmax(logit/T):
+# la costante sparisce nel softmax, quindi la calibrazione si applica qui,
+# a valle, senza toccare il file .tflite.
+TEMPERATURA = float(cfg.get('temperatura', 1.0))
 IMG_SIZE = (224, 224)
 
 # 4 thread = i 4 core del Pi 4B. Di default ne userebbe uno solo e la latenza
@@ -56,7 +62,8 @@ DTYPE = INP['dtype']
 
 print(f"Modello: {os.path.basename(MODELLO)} "
       f"({cfg.get('quantizzazione','?')}, input {np.dtype(DTYPE).name})")
-print(f"Regola: {'costo atteso' if USA_COSTO else f'soglia {SOGLIA}'}")
+print(f"Regola: {'costo atteso' if USA_COSTO else f'soglia {SOGLIA}'}"
+      f" | temperatura {TEMPERATURA:.2f}")
 
 
 def prepara(img):
@@ -73,6 +80,7 @@ def classifica(img):
     interp.set_tensor(INP['index'], x)
     interp.invoke()
     probs = interp.get_tensor(OUTP['index'])[0].astype(np.float64)
+    probs = applica_temperatura(probs[None, :], TEMPERATURA)[0]
     ms = (time.perf_counter() - t0) * 1000
 
     if USA_COSTO:

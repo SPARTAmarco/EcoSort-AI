@@ -1,5 +1,5 @@
 """
-EcoSort AI — Matrice di costo e regola di decisione bayesiana.
+EcoSort AI — Matrice di costo, calibrazione e regola di decisione bayesiana.
 
 Modulo condiviso tra:
   - il benchmark su Colab (selezione del modello)
@@ -7,6 +7,13 @@ Modulo condiviso tra:
 
 L'idea centrale: il sistema non deve massimizzare l'accuratezza, deve
 MINIMIZZARE IL DANNO all'impianto di riciclo. Sono due obiettivi diversi.
+
+NOVITA v2: temperature scaling. La regola bayesiana si regge sulle
+probabilita, e una rete addestrata con cross-entropy e' quasi sempre
+SOVRA-CONFIDENTE: dice 0.97 quando ha ragione l'88% delle volte. Con
+probabilita gonfiate la regola agisce troppo spesso invece di mandare in
+indifferenziata, e il costo peggiora senza che l'accuratezza cambi di un
+punto. Un solo parametro T stimato sulla validation lo corregge.
 """
 import numpy as np
 
@@ -51,6 +58,79 @@ COSTO = np.array([
 ], dtype=np.float64)
 
 
+# ============================================================================
+# CALIBRAZIONE (temperature scaling)
+# ============================================================================
+def applica_temperatura(probs, T):
+    """
+    Ricalibra le probabilita con un solo parametro.
+
+    Il modello esporta gia il softmax, non i logit. Non e' un problema:
+        log(p) = logit - logsumexp(logit)
+    quindi softmax(log(p)/T) == softmax(logit/T), perche' la costante sparisce
+    nel softmax. Si puo' quindi calibrare a valle del modello, senza toccare
+    il grafo e senza rischi in fase di conversione TFLite.
+
+    T > 1  ammorbidisce (il modello era troppo sicuro)   <- caso tipico
+    T < 1  irrigidisce
+    T = 1  nessuna modifica
+    """
+    if T is None or abs(T - 1.0) < 1e-6:
+        return np.asarray(probs, dtype=np.float64)
+    z = np.log(np.clip(np.asarray(probs, dtype=np.float64), 1e-12, 1.0)) / float(T)
+    z -= z.max(axis=-1, keepdims=True)
+    e = np.exp(z)
+    return e / e.sum(axis=-1, keepdims=True)
+
+
+def nll(probs, y):
+    """Negative log-likelihood: la metrica che la temperatura minimizza."""
+    p = np.asarray(probs, dtype=np.float64)[np.arange(len(y)), np.asarray(y)]
+    return float(-np.log(np.clip(p, 1e-12, 1.0)).mean())
+
+
+def stima_temperatura(probs, y, lo=0.25, hi=5.0, passi=60, raffinamenti=3):
+    """
+    Cerca la T che minimizza la NLL sulla VALIDATION (mai sul test).
+    Ricerca a griglia con raffinamento locale: nessuna dipendenza da scipy,
+    e la funzione e' convessa in log(T), quindi la griglia basta e avanza.
+    """
+    probs, y = np.asarray(probs, dtype=np.float64), np.asarray(y)
+    best_T, best_v = 1.0, nll(probs, y)
+    for _ in range(raffinamenti):
+        griglia = np.linspace(lo, hi, passi)
+        for T in griglia:
+            v = nll(applica_temperatura(probs, T), y)
+            if v < best_v:
+                best_T, best_v = float(T), v
+        passo = (hi - lo) / passi
+        lo, hi = max(0.05, best_T - passo * 2), best_T + passo * 2
+    return best_T, best_v
+
+
+def errore_calibrazione(probs, y, bins=15):
+    """
+    ECE — Expected Calibration Error. Divide le predizioni in fasce di
+    confidenza e misura quanto la confidenza media si scosta dall'accuratezza
+    reale in ogni fascia. 0 = perfettamente calibrato.
+    Serve a dimostrare (numeri alla mano) che la calibrazione ha funzionato.
+    """
+    probs, y = np.asarray(probs, dtype=np.float64), np.asarray(y)
+    conf, pred = probs.max(axis=1), probs.argmax(axis=1)
+    corretti = (pred == y).astype(np.float64)
+    bordi = np.linspace(0.0, 1.0, bins + 1)
+    ece = 0.0
+    for i in range(bins):
+        m = (conf > bordi[i]) & (conf <= bordi[i + 1])
+        if m.sum() == 0:
+            continue
+        ece += m.mean() * abs(corretti[m].mean() - conf[m].mean())
+    return float(ece)
+
+
+# ============================================================================
+# REGOLA DI DECISIONE
+# ============================================================================
 def azione_ottima(probs, costo=COSTO):
     """
     Regola di decisione bayesiana: sceglie l'azione che minimizza il COSTO
@@ -62,7 +142,7 @@ def azione_ottima(probs, costo=COSTO):
     "indifferenziata" e' una delle azioni possibili, quindi la soglia emerge
     da sola dalla matrice invece di essere un numero scelto a occhio.
 
-    probs: array (n, 3) di probabilita softmax
+    probs: array (n, 3) di probabilita softmax (meglio se gia calibrate)
     ritorna: (azioni (n,), costi_attesi (n, 4))
     """
     probs = np.atleast_2d(np.asarray(probs, dtype=np.float64))
@@ -88,6 +168,27 @@ def costo_medio_soglia(y_true, probs, soglia=0.70, costo=COSTO):
     pred = probs.argmax(axis=1)
     azioni = np.where(probs.max(axis=1) >= soglia, pred, 3)
     return costo_medio(y_true, azioni, costo)
+
+
+def soglia_migliore(y_true, probs, costo=COSTO):
+    """
+    Cerca la soglia fissa ottimale a posteriori. Non serve per il deployment:
+    serve a dimostrare che perfino la MIGLIORE soglia possibile non batte la
+    regola a costo, perche' una soglia unica non puo' distinguere il vetro
+    dalla carta.
+    """
+    probs = np.asarray(probs)
+    migliore = (0.0, float('inf'))
+    for s in np.linspace(0.0, 0.99, 100):
+        c = costo_medio_soglia(y_true, probs, float(s), costo)
+        if c < migliore[1]:
+            migliore = (float(s), c)
+    return migliore
+
+
+def gravi(y_true, azioni):
+    """Errori gravi: vetro_e_metallo finito nel bidone blu o giallo."""
+    return int(((np.asarray(y_true) == 2) & np.isin(np.asarray(azioni), [0, 1])).sum())
 
 
 def soglie_implicite(costo=COSTO):
@@ -133,6 +234,33 @@ def pesi_training(costo=COSTO, class_weight_bilanciato=None):
     return pesi
 
 
+def riepilogo(y_true, probs_grezze, T=None, etichetta=''):
+    """
+    Confronto compatto fra le quattro regole possibili, con e senza
+    calibrazione. E' la tabella da mostrare alla giuria.
+    """
+    y_true = np.asarray(y_true)
+    p_cal = applica_temperatura(probs_grezze, T) if T else np.asarray(probs_grezze)
+    az, _ = azione_ottima(p_cal)
+    s_best, c_best = soglia_migliore(y_true, p_cal)
+    r = dict(
+        etichetta=etichetta,
+        accuracy=float((p_cal.argmax(1) == y_true).mean()),
+        temperatura=float(T) if T else 1.0,
+        ece_prima=errore_calibrazione(probs_grezze, y_true),
+        ece_dopo=errore_calibrazione(p_cal, y_true),
+        costo_argmax=costo_medio_argmax(y_true, p_cal),
+        costo_soglia70=costo_medio_soglia(y_true, p_cal, 0.70),
+        costo_soglia_ottima=c_best,
+        soglia_ottima=s_best,
+        costo_decisione=costo_medio(y_true, az),
+        coverage=float((az != 3).mean()),
+        gravi_argmax=gravi(y_true, p_cal.argmax(1)),
+        gravi_decisione=gravi(y_true, az),
+    )
+    return r
+
+
 def stampa_matrice(costo=COSTO):
     print("MATRICE DI COSTO (riga = reale, colonna = destinazione)")
     print(f"{'':>18}" + "".join(f"{a[:12]:>14}" for a in AZIONI))
@@ -148,3 +276,17 @@ if __name__ == '__main__':
     print("\nSOGLIE IMPLICITE (p minima per agire invece di mandare in grigio):")
     for c, r, p in soglie_implicite():
         print(f"  {c:>18}  vs {r:<18} : {p*100:5.1f}%")
+
+    # dimostrazione del temperature scaling su probabilita sintetiche
+    rng = np.random.default_rng(0)
+    y = rng.integers(0, 3, 2000)
+    logit = np.eye(3)[y] * 1.6 + rng.normal(0, 1.0, (2000, 3))
+    p = np.exp(logit) / np.exp(logit).sum(1, keepdims=True)
+    p = p ** 2.0                      # rete deliberatamente sovra-confidente
+    p /= p.sum(1, keepdims=True)
+    T, _ = stima_temperatura(p, y)
+    print(f"\nESEMPIO — temperatura stimata: {T:.3f}")
+    print(f"  ECE prima {errore_calibrazione(p, y):.4f} -> dopo "
+          f"{errore_calibrazione(applica_temperatura(p, T), y):.4f}")
+    print(f"  costo decisione prima {costo_medio(y, azione_ottima(p)[0]):.4f} -> dopo "
+          f"{costo_medio(y, azione_ottima(applica_temperatura(p, T))[0]):.4f}")
